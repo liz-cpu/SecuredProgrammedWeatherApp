@@ -1,58 +1,101 @@
 package com.example.nhlmobileapp
 
-import android.os.Bundle
-import com.google.android.material.snackbar.Snackbar
+import android.content.Context
+import android.content.Intent
+import android.content.SharedPreferences
+import android.content.SharedPreferences.Editor
+import android.opengl.Visibility
 import androidx.appcompat.app.AppCompatActivity
-import androidx.navigation.findNavController
-import androidx.navigation.ui.AppBarConfiguration
-import androidx.navigation.ui.navigateUp
-import androidx.navigation.ui.setupActionBarWithNavController
-import android.view.Menu
-import android.view.MenuItem
+import android.os.Bundle
+import android.view.View
+import androidx.lifecycle.ViewModelProvider
 import com.example.nhlmobileapp.databinding.ActivityMainBinding
+import com.example.nhlmobileapp.helpers.CryptoManager
+import com.example.nhlmobileapp.helpers.RSAEncryption
+import com.example.nhlmobileapp.helpers.SimpleResponse
+import com.example.nhlmobileapp.responses.LoginResponse
+import com.example.nhlmobileapp.viewmodels.LoginViewModel
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 
-class MainActivity : AppCompatActivity() {
 
-    private lateinit var appBarConfiguration: AppBarConfiguration
+class MainActivity : AppCompatActivity(), View.OnClickListener {
+
+    private val viewModel: LoginViewModel by lazy {
+        ViewModelProvider(this)[LoginViewModel::class.java]
+    }
+
+    public companion object {
+        lateinit var fileDirectory: File
+    }
+
     private lateinit var binding: ActivityMainBinding
+    lateinit var sharedPreferences: SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        supportActionBar?.setDisplayShowTitleEnabled(false)
         binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        val view = binding.root
+        setContentView(view)
 
-        setSupportActionBar(binding.toolbar)
+        binding.loginBtn.setOnClickListener(this)
+        binding.registerBtn.setOnClickListener(this)
 
-        val navController = findNavController(R.id.nav_host_fragment_content_main)
-        appBarConfiguration = AppBarConfiguration(navController.graph)
-        setupActionBarWithNavController(navController, appBarConfiguration)
+        fileDirectory = filesDir
 
-        binding.fab.setOnClickListener { view ->
-            Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                .setAction("Action", null).show()
+        validateToken()
+    }
+
+    override fun onClick(view: View?) {
+        when(view?.id){
+            R.id.loginBtn->{
+                handleOnLoginClick()
+            }
+            R.id.registerBtn->{
+                handleOnRegisterClick()
+            }
         }
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        menuInflater.inflate(R.menu.menu_main, menu)
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        return when (item.itemId) {
-            R.id.action_settings -> true
-            else -> super.onOptionsItemSelected(item)
+    private fun validateToken() {
+        viewModel.executeValidateToken()
+        viewModel.validateTokenLiveData.observe(this) { response ->
+            if (response.isSuccessful) {
+                if (response.body.valid) {
+                    startActivity(Intent(this, DashboardActivity::class.java))
+                }
+            }
         }
     }
 
-    override fun onSupportNavigateUp(): Boolean {
-        val navController = findNavController(R.id.nav_host_fragment_content_main)
-        return navController.navigateUp(appBarConfiguration)
-                || super.onSupportNavigateUp()
+    private fun handleOnLoginClick() {
+        binding.errorField.visibility = View.INVISIBLE
+        binding.errorField.text = ""
+        val username = binding.usernameField.text.toString()
+        val password = binding.passwordField.text.toString()
+
+        viewModel.executeLogin(username, password)
+        viewModel.loginLiveData.observe(this) { response ->
+            handleResponse(response)
+        }
+    }
+
+    private fun handleOnRegisterClick() {
+        startActivity(Intent(this, RegisterActivity::class.java))
+    }
+
+    private fun handleResponse(response: SimpleResponse<LoginResponse>) {
+        if (response.statusCode == 200) {
+            CryptoManager("authToken").encrypt(response.body.token, filesDir)
+            CryptoManager("owmKey").encrypt(response.body.owmKey, filesDir)
+
+            startActivity(Intent(this, DashboardActivity::class.java))
+        } else {
+            binding.errorField.visibility = View.VISIBLE
+            binding.errorField.text = response.message
+        }
     }
 }
